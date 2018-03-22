@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DeltaStories</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",launch:function(){var e=this.getContext().getProject().ObjectID,t="",a="",o="";console.log(e);var l=Ext.create("Ext.form.field.Date",{fieldLabel:"From:",listeners:{select:function(e,a){console.log(a),t=a.toISOString()}}}),r=Ext.create("Ext.form.field.Date",{fieldLabel:"To:",listeners:{select:function(e,t){console.log(t),a=t.toISOString()}}}),i=Ext.create("Ext.panel.Panel",{type:"vbox",align:"stretch",padding:5,itemId:"datePanel",componentCls:"panel"}),n=Ext.create("Rally.ui.combobox.ReleaseComboBox",{itemId:"releaseComboBox",scope:this,listeners:{ready:function(e){o=e.getRecord().get("ObjectID")},select:function(e,t,a){o=e.getRecord().get("ObjectID")}}}),d=Ext.create("Rally.ui.Button",{text:"Search",scope:this,handler:function(){console.log(t,a),this._doSearch(t,a,e,o)}}),s=Ext.create("Ext.panel.Panel",{layout:"hbox",padding:5,itemId:"parentPanel",componentCls:"panel",items:[{xtype:"panel",title:"Stories At Start Date",flex:1,itemId:"childPanel1"},{xtype:"splitter"},{xtype:"panel",title:"Stories At End Date",flex:1,itemId:"childPanel2"}]});this.add(i),i.add(l),i.add(r),i.add(n),i.add(d),this.add(s)},_doSearch:function(e,t,a,o){console.log("looking for",e,t,a),""!=e&&""!=t&&(console.log("loading init stories"),Ext.create("Rally.data.lookback.SnapshotStore",{fetch:["Name","FormattedID","LeafStoryPlanEstimateTotal","State","_ValidFrom","_ValidTo","PlanEstimate","ScheduleState"],autoLoad:!0,filters:[{property:"__At",value:e},{property:"_TypeHierarchy",value:"PortfolioItem/Feature"},{property:"_ProjectHierarchy",value:a},{property:"Release",value:o}],sorters:[{property:"ObjectID",direction:"ASC"}],hydrate:["ScheduleState","State"],listeners:{load:function(e,t,a){this._onStoriesLoaded(e,t,"#childPanel1")},scope:this}}),console.log("loading end stories"),Ext.create("Rally.data.lookback.SnapshotStore",{fetch:["Name","FormattedID","LeafStoryPlanEstimateTotal","State","_ValidFrom","_ValidTo","PlanEstimate","ScheduleState"],autoLoad:!0,filters:[{property:"__At",value:t},{property:"_TypeHierarchy",value:"PortfolioItem/Feature"},{property:"_ProjectHierarchy",value:a},{property:"Release",value:o}],sorters:[{property:"ObjectID",direction:"ASC"}],hydrate:["ScheduleState","State"],listeners:{load:function(e,t,a){this._onStoriesLoaded(e,t,"#childPanel2")},scope:this}}))},_onStoriesLoaded:function(e,t,a){var o,l=[];_.each(t,function(e){o=e.get("FormattedID"),l.push({Name:e.get("Name"),FormattedID:o,PlanEstimate:e.get("PlanEstimate"),ScheduleState:e.get("ScheduleState"),State:e.get("State"),LeafStoryPlanEstimateTotal:e.get("LeafStoryPlanEstimateTotal")})});var r=Ext.create("Rally.data.custom.Store",{data:l,pageSize:1e3}),i=Ext.create("Rally.ui.grid.Grid",{showRowActionsColumn:!1,showPagingToolbar:!1,enableEditing:!1,itemId:a+"Grid",id:a+"Grid",store:r,columnCfgs:[{text:"ID",dataIndex:"FormattedID"},{text:"Name",dataIndex:"Name",flex:1},{text:"Plan Estimate",dataIndex:"LeafStoryPlanEstimateTotal"},{text:"State",dataIndex:"State"}]}),n=this.down(a);n.removeAll(!0),n.add(i),i.getView().addRowCls(3,"error")}});
+
+            Rally.launchApp('CustomApp', {
+                name:"DeltaStories",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>
