@@ -57,7 +57,6 @@ Ext.define('CustomApp', {
 
         });
 
-
         var searchButton = Ext.create('Rally.ui.Button', {
         	text: 'Search',
         	scope: this,
@@ -67,9 +66,6 @@ Ext.define('CustomApp', {
         		this._doSearch(initDate, endDate, project, releaseId);
         	}
         });
-
-        
-        
 
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'hbox',
@@ -95,6 +91,11 @@ Ext.define('CustomApp', {
             ],
         });
 
+        this.myMask = new Ext.LoadMask({
+		    msg    : 'Please wait...',
+		    target : mainPanel
+		});
+
         this.add(datePanel);
         datePanel.add(initDatePicker);
         datePanel.add(endDatePicker);
@@ -108,34 +109,64 @@ Ext.define('CustomApp', {
     _doSearch: function(initDate, endDate, project, releaseId) {
     	console.log('looking for', initDate, endDate, project);
 
+    	//set loading message.
+
     	if (initDate == '' || endDate == '') {
     		return;
     	}
+
+    	this.filtersInit = [
+    		{
+                property : '__At',
+                value    : initDate
+            },
+            
+            {
+                property : '_TypeHierarchy',
+                value    : 'PortfolioItem/Feature'
+            },
+           	{
+                property : '_ProjectHierarchy',
+                value: project
+            },	            
+
+            {
+                property : 'Release',
+                value: releaseId
+            }	
+    	];
+
+    	this.filtersEnd = [
+    		{
+                property : '__At',
+                value    : endDate
+            },
+            
+            {
+                property : '_TypeHierarchy',
+                value    : 'PortfolioItem/Feature'
+            },
+           	{
+                property : '_ProjectHierarchy',
+                value: project
+            },
+            {
+                property : 'Release',
+                value: releaseId
+            }
+    	]
+
+    	this.myMask.show();
+
+    	this._loadInitData();
+    },
+
+    _loadInitData: function () {
     	console.log('loading init stories');
-
-    	Ext.create('Rally.data.lookback.SnapshotStore', {
+    	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', "State", "_ValidFrom", "_ValidTo", 'PlanEstimate', "ScheduleState"],
+            filters : this.filtersInit,
             autoLoad: true,
-            filters  : [
-	            {
-	                property : '__At',
-	                value    : initDate
-	            },
-	            
-	            {
-	                property : '_TypeHierarchy',
-	                value    : 'PortfolioItem/Feature'
-	            },
-	           	{
-	                property : '_ProjectHierarchy',
-	                value: project
-	            },	            
-
-	            {
-	                property : 'Release',
-	                value: releaseId
-	            },
-	        ],
 	        sorters : [
 		        {
 		            property: 'ObjectID',
@@ -147,36 +178,24 @@ Ext.define('CustomApp', {
 
             listeners: {
                 load: function(store, data, success) {
+                	console.log(data);
+                	console.log('id',data[0].get('FormattedID'));
                 	this._onStoriesLoaded(store, data, '#childPanel1');
+                	this._loadEndData();
                 },
                 scope: this
             }
         });
 
+        //store.addFilter(this.filtersInit);
+    },
 
-        console.log('loading end stories');
-    	Ext.create('Rally.data.lookback.SnapshotStore', {
+    _loadEndData: function() {
+    	console.log('loading end stories');
+        var store2 = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', "State", "_ValidFrom", "_ValidTo", 'PlanEstimate', "ScheduleState"],
+            filters : this.filtersEnd,
             autoLoad: true,
-            filters  : [
-	            {
-	                property : '__At',
-	                value    : endDate
-	            },
-	            
-	            {
-	                property : '_TypeHierarchy',
-	                value    : 'PortfolioItem/Feature'
-	            },
-	           	{
-	                property : '_ProjectHierarchy',
-	                value: project
-	            },
-	            {
-	                property : 'Release',
-	                value: releaseId
-	            },
-	        ],
 	        sorters : [
 		        {
 		            property: 'ObjectID',
@@ -188,7 +207,9 @@ Ext.define('CustomApp', {
 
             listeners: {
                 load: function(store, data, success) {
+                	console.log(data);
                 	this._onStoriesLoaded(store, data, '#childPanel2');
+                	this.myMask.hide()
                 },
                 scope: this
             }
@@ -251,6 +272,5 @@ Ext.define('CustomApp', {
     	var gridHolder = this.down(panel);
         gridHolder.removeAll(true);
         gridHolder.add(grid);
-        grid.getView().addRowCls(3, 'error');
      }
 });
