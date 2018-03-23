@@ -11,9 +11,8 @@
     extend: 'Rally.app.App',
     componentCls: 'app',
     launch: function() {
-        //Write app code here
+        //API Docs: https://help.rallydev.com/apps/2.1/doc/    
 
-        //API Docs: https://help.rallydev.com/apps/2.1/doc/
 
         var context =  this.getContext();
         var project = context.getProject()['ObjectID'];
@@ -66,7 +65,6 @@
 
         });
 
-
         var searchButton = Ext.create('Rally.ui.Button', {
         	text: 'Search',
         	scope: this,
@@ -77,14 +75,12 @@
         	}
         });
 
-        
-        
-
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'hbox',
             padding: 5,
             itemId: 'parentPanel',
-            componentCls: 'panel',
+            //componentCls: 'panel',
+            cls: 'attention-row',
             items: [
                 {
 	                xtype: 'panel',
@@ -104,6 +100,12 @@
             ],
         });
 
+
+        this.myMask = new Ext.LoadMask({
+		    msg    : 'Please wait...',
+		    target : mainPanel
+		});
+
         this.add(datePanel);
         datePanel.add(initDatePicker);
         datePanel.add(endDatePicker);
@@ -117,34 +119,64 @@
     _doSearch: function(initDate, endDate, project, releaseId) {
     	console.log('looking for', initDate, endDate, project);
 
+    	//set loading message.
+
     	if (initDate == '' || endDate == '') {
     		return;
     	}
+
+    	this.filtersInit = [
+    		{
+                property : '__At',
+                value    : initDate
+            },
+            
+            {
+                property : '_TypeHierarchy',
+                value    : 'PortfolioItem/Feature'
+            },
+           	{
+                property : '_ProjectHierarchy',
+                value: project
+            },	            
+
+            {
+                property : 'Release',
+                value: releaseId
+            }	
+    	];
+
+    	this.filtersEnd = [
+    		{
+                property : '__At',
+                value    : endDate
+            },
+            
+            {
+                property : '_TypeHierarchy',
+                value    : 'PortfolioItem/Feature'
+            },
+           	{
+                property : '_ProjectHierarchy',
+                value: project
+            },
+            {
+                property : 'Release',
+                value: releaseId
+            }
+    	];
+
+    	this.myMask.show();
+
+    	this._loadInitData();
+    },
+
+    _loadInitData: function () {
     	console.log('loading init stories');
-
-    	Ext.create('Rally.data.lookback.SnapshotStore', {
+    	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', "State", "_ValidFrom", "_ValidTo", 'PlanEstimate', "ScheduleState"],
+            filters : this.filtersInit,
             autoLoad: true,
-            filters  : [
-	            {
-	                property : '__At',
-	                value    : initDate
-	            },
-	            
-	            {
-	                property : '_TypeHierarchy',
-	                value    : 'PortfolioItem/Feature'
-	            },
-	           	{
-	                property : '_ProjectHierarchy',
-	                value: project
-	            },	            
-
-	            {
-	                property : 'Release',
-	                value: releaseId
-	            },
-	        ],
 	        sorters : [
 		        {
 		            property: 'ObjectID',
@@ -156,36 +188,22 @@
 
             listeners: {
                 load: function(store, data, success) {
-                	this._onStoriesLoaded(store, data, '#childPanel1');
+                	this.initItems = data;
+                	this._loadEndData();
                 },
                 scope: this
             }
         });
 
+        //store.addFilter(this.filtersInit);
+    },
 
-        console.log('loading end stories');
-    	Ext.create('Rally.data.lookback.SnapshotStore', {
+    _loadEndData: function() {
+    	console.log('loading end stories');
+        var store2 = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', "State", "_ValidFrom", "_ValidTo", 'PlanEstimate', "ScheduleState"],
+            filters : this.filtersEnd,
             autoLoad: true,
-            filters  : [
-	            {
-	                property : '__At',
-	                value    : endDate
-	            },
-	            
-	            {
-	                property : '_TypeHierarchy',
-	                value    : 'PortfolioItem/Feature'
-	            },
-	           	{
-	                property : '_ProjectHierarchy',
-	                value: project
-	            },
-	            {
-	                property : 'Release',
-	                value: releaseId
-	            },
-	        ],
 	        sorters : [
 		        {
 		            property: 'ObjectID',
@@ -197,7 +215,9 @@
 
             listeners: {
                 load: function(store, data, success) {
-                	this._onStoriesLoaded(store, data, '#childPanel2');
+                	this.endItems = data;
+                	this._onStoriesLoaded();
+                	this.myMask.hide();
                 },
                 scope: this
             }
@@ -205,30 +225,134 @@
     },
 
      //make grid of stories 
-    _onStoriesLoaded: function(store, records, panel) {
+    _onStoriesLoaded: function(records, panel) {
         var that = this;
-        var stories = [];
+        var initFeatures = [];
+        var endFeatures = [];
+        var initIds = [];
+        var endIds = [];
         var id;
 
-        _.each(records, function(record) {
-            id = record.get('FormattedID');
+		_.each(this.initItems, function(record) {
+        	initIds.push(record.get('ObjectID'));
+        });
+        console.log('initIds', initIds);
+
+        _.each(this.endItems, function(record) {
+        	endIds.push(record.get('ObjectID'));
+        });
+        console.log('endIds', endIds);
+
+
+        //find features not planned / items on endItems that were not included in initItems
+        _.each(this.endItems, function(record) {
+            id = record.get('ObjectID');
+            var planned = true;
+
+            console.log('checking if', id, 'exists in', initIds);
+    		if (!Ext.Array.contains(initIds, id)) {
+    			planned = false;
+    		}
             
-            stories.push({
+            endFeatures.push({
                 Name: record.get('Name'),
-                FormattedID: id,
+                FormattedID: record.get('FormattedID'),
                 PlanEstimate: record.get('PlanEstimate'),
                 ScheduleState: record.get('ScheduleState'),
                 State: record.get('State'),
+                Planned: planned,
                 LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
                 
             });
-        });
-        
-        var myStore = Ext.create('Rally.data.custom.Store', {
-        	data: stories,
-        	pageSize: 1000
-		});		
+        }, this);
 
+
+        //find feature that were not delivered / items on initItems that were not included in endItems.
+         _.each(this.initItems, function(record) {
+            id = record.get('ObjectID');
+            var removed = false;
+
+            console.log('checking if', id, 'exists in', endIds);
+    		if (!Ext.Array.contains(endIds, id)) {
+    			removed = true;
+    		} 
+            
+            initFeatures.push({
+                Name: record.get('Name'),
+                FormattedID: record.get('FormattedID'),
+                PlanEstimate: record.get('PlanEstimate'),
+                ScheduleState: record.get('ScheduleState'),
+                State: record.get('State'),
+                Removed: removed,
+                LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
+                
+            });
+        }, this);
+
+        
+        var initStore = Ext.create('Rally.data.custom.Store', {
+        	data: initFeatures,
+        	pageSize: 1000
+		});
+
+		var endStore = Ext.create('Rally.data.custom.Store', {
+        	data: endFeatures,
+        	pageSize: 1000
+		});
+
+		this._createInitGrid(initStore, '#childPanel1');
+		this._createEndGrid(endStore, '#childPanel2');
+     },
+
+     _createInitGrid: function(myStore, panel) {
+		var grid = Ext.create('Rally.ui.grid.Grid', {
+			showRowActionsColumn: false,
+			showPagingToolbar: false,
+			enableEditing: false,
+    		itemId : ''+panel+'Grid',
+    		id : ''+panel+'Grid',
+    		store: myStore,
+
+    		columnCfgs: [
+                {
+                    text: 'ID', 
+                    dataIndex: 'FormattedID',
+                    tdCls: 'x-change-cell'
+                },
+                {
+                    text: 'Name', 
+                    dataIndex: 'Name',
+                    flex: 1,
+                    tdCls: 'x-change-cell'
+                },
+                {
+                    text: 'Plan Estimate', 
+                    dataIndex: 'LeafStoryPlanEstimateTotal',
+                    tdCls: 'x-change-cell'
+                },
+                {
+                    text: 'State', 
+                    dataIndex: 'State',
+                    tdCls: 'x-change-cell'
+                }
+            ],
+
+            viewConfig: {
+			    getRowClass: function(record, rowIndex, rowParams, store) {
+			    	if (record.get('Removed') == true) {
+			    		console.log('changing css for records', record, 'index', rowIndex);
+			    		return 'attention';
+			    	}
+    			}
+			}
+        	});
+
+    	var gridHolder = this.down(panel);
+        gridHolder.removeAll(true);
+        gridHolder.add(grid);
+     },
+
+     _createEndGrid: function(myStore, panel) {
 		var grid = Ext.create('Rally.ui.grid.Grid', {
 			showRowActionsColumn: false,
 			showPagingToolbar: false,
@@ -239,29 +363,40 @@
     		columnCfgs: [
                 {
                     text: 'ID', 
-                    dataIndex: 'FormattedID'
+                    dataIndex: 'FormattedID',
+                    tdCls: 'x-change-cell'
                 },
                 {
                     text: 'Name', 
                     dataIndex: 'Name',
-                    flex: 1
+                    flex: 1,
+                    tdCls: 'x-change-cell'
                 },
                 {
                     text: 'Plan Estimate', 
-                    dataIndex: 'LeafStoryPlanEstimateTotal'
+                    dataIndex: 'LeafStoryPlanEstimateTotal',
+                    tdCls: 'x-change-cell'
                 },
                 {
                     text: 'State', 
-                    dataIndex: 'State'
+                    dataIndex: 'State',
+                    tdCls: 'x-change-cell'
                 }
-            ] 
+            ],
+            viewConfig: {
+			    getRowClass: function(record, rowIndex, rowParams, store) {
+			    	if (record.get('Planned') == false) {
+			    		console.log('changing css for records', record, 'index', rowIndex);
+			    		return 'new-feature';
+			    	}
+    			}
+			}
         	});
 
     	var gridHolder = this.down(panel);
         gridHolder.removeAll(true);
         gridHolder.add(grid);
-        grid.getView().addRowCls(3, 'error');
-     }
+     },
 });
 
 
@@ -279,6 +414,14 @@
     <style type="text/css">
         .app {
   /* Add app styles here */
+}
+.attention .x-change-cell {
+  background-color: #ffe2e2 !important;
+  color: #900;
+}
+.new-feature .x-change-cell {
+  background-color: #c2d7f9 !important;
+  color: #009;
 }
 
     </style>
