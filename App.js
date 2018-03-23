@@ -10,7 +10,7 @@ Ext.define('CustomApp', {
         var initDate = '';
         var endDate = '';
         var releaseId = '';
-        console.log(project);
+        console.log('project: ', project);
         var that = this;
 
         var initDatePicker = Ext.create('Ext.form.field.Date', {
@@ -70,8 +70,6 @@ Ext.define('CustomApp', {
             layout: 'hbox',
             padding: 5,
             itemId: 'parentPanel',
-            //componentCls: 'panel',
-            cls: 'attention-row',
             items: [
                 {
 	                xtype: 'panel',
@@ -96,6 +94,39 @@ Ext.define('CustomApp', {
 		    msg    : 'Please wait...',
 		    target : mainPanel
 		});
+
+
+        Ext.create('Rally.data.wsapi.Store', {
+		    model: 'Release',
+		    autoLoad: true,
+		    context: {
+		        projectScopeUp: false,
+		        projectScopeDown: true,
+		        project: 'project/46772662477'
+		    },
+		    filters: [
+		            {
+		                property: 'Project.parent.ObjectID',
+		                value: 46772662477//project
+		            },
+		            {
+		                property: 'name',
+		                value: 'ESS 2018 - Eagle'//name of the release based on parent release combo box.
+		            }
+	        ],
+		    listeners: {
+		        load: function(store, data, success) {
+		            console.log('Store:', store);
+		            console.log('Data:', data);
+		            
+		        }
+		    },
+		    fetch: ['Description', 'Name', 'ObjectID']
+		});
+
+
+
+
 
         this.add(datePanel);
         datePanel.add(initDatePicker);
