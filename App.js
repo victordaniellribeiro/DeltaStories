@@ -290,7 +290,7 @@ Ext.define('CustomApp', {
             id = record.get('ObjectID');
             var planned = true;
 
-            console.log('checking if', id, 'exists in', initIds);
+            //console.log('checking if', id, 'exists in', initIds);
     		if (!Ext.Array.contains(initIds, id)) {
     			planned = false;
     		}
