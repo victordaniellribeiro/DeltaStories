@@ -18,15 +18,17 @@
         var project = context.getProject()['ObjectID'];
         var initDate = '';
         var endDate = '';
-        var releaseId = '';
-        console.log(project);
+        var releases = [];
+        var baseReleaseName = '';
+
+        console.log('project: ', project);
         var that = this;
 
         var initDatePicker = Ext.create('Ext.form.field.Date', {
         	fieldLabel: 'From:',
         	listeners : {
         		select: function(picker, date) {
-        			console.log(date);
+        			//console.log(date);
         			initDate = date.toISOString();
         		}
         	}
@@ -36,7 +38,7 @@
         	fieldLabel: 'To:',
         	listeners : {
         		select: function(picker, date) {
-        			console.log(date);
+        			//console.log(date);
         			endDate = date.toISOString();
         		}
         	}
@@ -56,10 +58,12 @@
         	scope: this,
         	listeners : {
         		ready: function(combobox) {
-        			releaseId = combobox.getRecord().get('ObjectID');
+        			//releaseId = combobox.getRecord().get('ObjectID');
+        			baseReleaseName = combobox.getRecord().get('Name');        			
         		},
 	        	select: function(combobox, records, opts) {
-	        		releaseId = combobox.getRecord().get('ObjectID');
+        			//releaseId = combobox.getRecord().get('ObjectID');
+        			baseReleaseName = combobox.getRecord().get('Name');
 	        	}
 	        }
 
@@ -70,8 +74,8 @@
         	scope: this,
         	handler: function() {
         		//handles search
-        		console.log(initDate, endDate);
-        		this._doSearch(initDate, endDate, project, releaseId);
+        		//console.log(initDate, endDate);
+        		this._doSearch(initDate, endDate, project, baseReleaseName);
         	}
         });
 
@@ -79,8 +83,6 @@
             layout: 'hbox',
             padding: 5,
             itemId: 'parentPanel',
-            //componentCls: 'panel',
-            cls: 'attention-row',
             items: [
                 {
 	                xtype: 'panel',
@@ -106,6 +108,7 @@
 		    target : mainPanel
 		});
 
+
         this.add(datePanel);
         datePanel.add(initDatePicker);
         datePanel.add(endDatePicker);
@@ -116,59 +119,105 @@
 
     },
 
-    _doSearch: function(initDate, endDate, project, releaseId) {
+    _doSearch: function(initDate, endDate, project, baseReleaseName) {
+    	console.log('looking for all releases:');
+
+    	//gather all releases 
+    	console.log('parent release', baseReleaseName);
     	console.log('looking for', initDate, endDate, project);
 
-    	//set loading message.
 
     	if (initDate == '' || endDate == '') {
     		return;
     	}
 
-    	this.filtersInit = [
-    		{
-                property : '__At',
-                value    : initDate
-            },
-            
-            {
-                property : '_TypeHierarchy',
-                value    : 'PortfolioItem/Feature'
-            },
-           	{
-                property : '_ProjectHierarchy',
-                value: project
-            },	            
-
-            {
-                property : 'Release',
-                value: releaseId
-            }	
-    	];
-
-    	this.filtersEnd = [
-    		{
-                property : '__At',
-                value    : endDate
-            },
-            
-            {
-                property : '_TypeHierarchy',
-                value    : 'PortfolioItem/Feature'
-            },
-           	{
-                property : '_ProjectHierarchy',
-                value: project
-            },
-            {
-                property : 'Release',
-                value: releaseId
-            }
-    	];
-
     	this.myMask.show();
 
-    	this._loadInitData();
+    	Ext.create('Rally.data.wsapi.Store', {
+		    model: 'Release',
+		    autoLoad: true,
+		    context: {
+		        projectScopeUp: false,
+		        projectScopeDown: true,
+		        project: 'project/' + project
+		    },
+		    filters: [
+		            {
+		                property: 'Project.parent.ObjectID',
+		                value: project
+		            },
+		            {
+		                property: 'name',
+		                value: baseReleaseName
+		            }
+	        ],
+		    listeners: {
+		        load: function(store, data, success) {
+		            //console.log('Store:', store);
+		            //console.log('Data:', data);
+
+		            var localReleases = [];
+
+		            _.each(data, function(record) {
+			        	localReleases.push(record.get('ObjectID'));
+			        });
+
+			        this.releases = localReleases;
+
+			        this.filtersInit = [
+			    		{
+			                property : '__At',
+			                value    : initDate
+			            },
+			            
+			            {
+			                property : '_TypeHierarchy',
+			                value    : 'PortfolioItem/Feature'
+			            },
+			           	{
+			                property : '_ProjectHierarchy',
+			                value: project
+			            },	            
+
+			            {
+			                property : 'Release',
+			                operator: 'in',
+			                value: this.releases
+			                //value: releaseId
+			            }	
+			    	];
+
+			    	this.filtersEnd = [
+			    		{
+			                property : '__At',
+			                value    : endDate
+			            },
+			            
+			            {
+			                property : '_TypeHierarchy',
+			                value    : 'PortfolioItem/Feature'
+			            },
+			           	{
+			                property : '_ProjectHierarchy',
+			                value: project
+			            },
+			            {
+			                property : 'Release',
+			                operator: 'in',
+			                value: this.releases
+			            }
+			    	];
+
+			    	this._loadInitData();
+		        },
+		        scope: this
+		    },
+		    fetch: ['Description', 'Name', 'ObjectID']
+		});
+
+
+
+    	
     },
 
     _loadInitData: function () {
@@ -188,6 +237,7 @@
 
             listeners: {
                 load: function(store, data, success) {
+                	//console.log('Init Store', store);
                 	this.initItems = data;
                 	this._loadEndData();
                 },
@@ -272,7 +322,7 @@
             id = record.get('ObjectID');
             var removed = false;
 
-            console.log('checking if', id, 'exists in', endIds);
+            //console.log('checking if', id, 'exists in', endIds);
     		if (!Ext.Array.contains(endIds, id)) {
     			removed = true;
     		} 
@@ -340,7 +390,7 @@
             viewConfig: {
 			    getRowClass: function(record, rowIndex, rowParams, store) {
 			    	if (record.get('Removed') == true) {
-			    		console.log('changing css for records', record, 'index', rowIndex);
+			    		//console.log('changing css for records', record, 'index', rowIndex);
 			    		return 'attention';
 			    	}
     			}
@@ -386,7 +436,7 @@
             viewConfig: {
 			    getRowClass: function(record, rowIndex, rowParams, store) {
 			    	if (record.get('Planned') == false) {
-			    		console.log('changing css for records', record, 'index', rowIndex);
+			    		//console.log('changing css for records', record, 'index', rowIndex);
 			    		return 'new-feature';
 			    	}
     			}

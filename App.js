@@ -9,7 +9,9 @@ Ext.define('CustomApp', {
         var project = context.getProject()['ObjectID'];
         var initDate = '';
         var endDate = '';
-        var releaseId = '';
+        var releases = [];
+        var baseReleaseName = '';
+
         console.log('project: ', project);
         var that = this;
 
@@ -17,7 +19,7 @@ Ext.define('CustomApp', {
         	fieldLabel: 'From:',
         	listeners : {
         		select: function(picker, date) {
-        			console.log(date);
+        			//console.log(date);
         			initDate = date.toISOString();
         		}
         	}
@@ -27,7 +29,7 @@ Ext.define('CustomApp', {
         	fieldLabel: 'To:',
         	listeners : {
         		select: function(picker, date) {
-        			console.log(date);
+        			//console.log(date);
         			endDate = date.toISOString();
         		}
         	}
@@ -47,10 +49,12 @@ Ext.define('CustomApp', {
         	scope: this,
         	listeners : {
         		ready: function(combobox) {
-        			releaseId = combobox.getRecord().get('ObjectID');
+        			//releaseId = combobox.getRecord().get('ObjectID');
+        			baseReleaseName = combobox.getRecord().get('Name');        			
         		},
 	        	select: function(combobox, records, opts) {
-	        		releaseId = combobox.getRecord().get('ObjectID');
+        			//releaseId = combobox.getRecord().get('ObjectID');
+        			baseReleaseName = combobox.getRecord().get('Name');
 	        	}
 	        }
 
@@ -61,8 +65,8 @@ Ext.define('CustomApp', {
         	scope: this,
         	handler: function() {
         		//handles search
-        		console.log(initDate, endDate);
-        		this._doSearch(initDate, endDate, project, releaseId);
+        		//console.log(initDate, endDate);
+        		this._doSearch(initDate, endDate, project, baseReleaseName);
         	}
         });
 
@@ -96,38 +100,6 @@ Ext.define('CustomApp', {
 		});
 
 
-        Ext.create('Rally.data.wsapi.Store', {
-		    model: 'Release',
-		    autoLoad: true,
-		    context: {
-		        projectScopeUp: false,
-		        projectScopeDown: true,
-		        project: 'project/46772662477'
-		    },
-		    filters: [
-		            {
-		                property: 'Project.parent.ObjectID',
-		                value: 46772662477//project
-		            },
-		            {
-		                property: 'name',
-		                value: 'ESS 2018 - Eagle'//name of the release based on parent release combo box.
-		            }
-	        ],
-		    listeners: {
-		        load: function(store, data, success) {
-		            console.log('Store:', store);
-		            console.log('Data:', data);
-		            
-		        }
-		    },
-		    fetch: ['Description', 'Name', 'ObjectID']
-		});
-
-
-
-
-
         this.add(datePanel);
         datePanel.add(initDatePicker);
         datePanel.add(endDatePicker);
@@ -138,59 +110,105 @@ Ext.define('CustomApp', {
 
     },
 
-    _doSearch: function(initDate, endDate, project, releaseId) {
+    _doSearch: function(initDate, endDate, project, baseReleaseName) {
+    	console.log('looking for all releases:');
+
+    	//gather all releases 
+    	console.log('parent release', baseReleaseName);
     	console.log('looking for', initDate, endDate, project);
 
-    	//set loading message.
 
     	if (initDate == '' || endDate == '') {
     		return;
     	}
 
-    	this.filtersInit = [
-    		{
-                property : '__At',
-                value    : initDate
-            },
-            
-            {
-                property : '_TypeHierarchy',
-                value    : 'PortfolioItem/Feature'
-            },
-           	{
-                property : '_ProjectHierarchy',
-                value: project
-            },	            
-
-            {
-                property : 'Release',
-                value: releaseId
-            }	
-    	];
-
-    	this.filtersEnd = [
-    		{
-                property : '__At',
-                value    : endDate
-            },
-            
-            {
-                property : '_TypeHierarchy',
-                value    : 'PortfolioItem/Feature'
-            },
-           	{
-                property : '_ProjectHierarchy',
-                value: project
-            },
-            {
-                property : 'Release',
-                value: releaseId
-            }
-    	];
-
     	this.myMask.show();
 
-    	this._loadInitData();
+    	Ext.create('Rally.data.wsapi.Store', {
+		    model: 'Release',
+		    autoLoad: true,
+		    context: {
+		        projectScopeUp: false,
+		        projectScopeDown: true,
+		        project: 'project/' + project
+		    },
+		    filters: [
+		            {
+		                property: 'Project.parent.ObjectID',
+		                value: project
+		            },
+		            {
+		                property: 'name',
+		                value: baseReleaseName
+		            }
+	        ],
+		    listeners: {
+		        load: function(store, data, success) {
+		            //console.log('Store:', store);
+		            //console.log('Data:', data);
+
+		            var localReleases = [];
+
+		            _.each(data, function(record) {
+			        	localReleases.push(record.get('ObjectID'));
+			        });
+
+			        this.releases = localReleases;
+
+			        this.filtersInit = [
+			    		{
+			                property : '__At',
+			                value    : initDate
+			            },
+			            
+			            {
+			                property : '_TypeHierarchy',
+			                value    : 'PortfolioItem/Feature'
+			            },
+			           	{
+			                property : '_ProjectHierarchy',
+			                value: project
+			            },	            
+
+			            {
+			                property : 'Release',
+			                operator: 'in',
+			                value: this.releases
+			                //value: releaseId
+			            }	
+			    	];
+
+			    	this.filtersEnd = [
+			    		{
+			                property : '__At',
+			                value    : endDate
+			            },
+			            
+			            {
+			                property : '_TypeHierarchy',
+			                value    : 'PortfolioItem/Feature'
+			            },
+			           	{
+			                property : '_ProjectHierarchy',
+			                value: project
+			            },
+			            {
+			                property : 'Release',
+			                operator: 'in',
+			                value: this.releases
+			            }
+			    	];
+
+			    	this._loadInitData();
+		        },
+		        scope: this
+		    },
+		    fetch: ['Description', 'Name', 'ObjectID']
+		});
+
+
+
+    	
     },
 
     _loadInitData: function () {
@@ -210,6 +228,7 @@ Ext.define('CustomApp', {
 
             listeners: {
                 load: function(store, data, success) {
+                	//console.log('Init Store', store);
                 	this.initItems = data;
                 	this._loadEndData();
                 },
@@ -294,7 +313,7 @@ Ext.define('CustomApp', {
             id = record.get('ObjectID');
             var removed = false;
 
-            console.log('checking if', id, 'exists in', endIds);
+            //console.log('checking if', id, 'exists in', endIds);
     		if (!Ext.Array.contains(endIds, id)) {
     			removed = true;
     		} 
@@ -362,7 +381,7 @@ Ext.define('CustomApp', {
             viewConfig: {
 			    getRowClass: function(record, rowIndex, rowParams, store) {
 			    	if (record.get('Removed') == true) {
-			    		console.log('changing css for records', record, 'index', rowIndex);
+			    		//console.log('changing css for records', record, 'index', rowIndex);
 			    		return 'attention';
 			    	}
     			}
@@ -408,7 +427,7 @@ Ext.define('CustomApp', {
             viewConfig: {
 			    getRowClass: function(record, rowIndex, rowParams, store) {
 			    	if (record.get('Planned') == false) {
-			    		console.log('changing css for records', record, 'index', rowIndex);
+			    		//console.log('changing css for records', record, 'index', rowIndex);
 			    		return 'new-feature';
 			    	}
     			}
