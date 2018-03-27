@@ -3,14 +3,18 @@ Ext.define('CustomApp', {
     componentCls: 'app',
     launch: function() {
         //API Docs: https://help.rallydev.com/apps/2.1/doc/    
-
-
         var context =  this.getContext();
-        var project = context.getProject()['ObjectID'];
+        var project = context.getProject()['ObjectID'];        
+        //var project = 90681998188;
+
         var initDate = '';
         var endDate = '';
-        var releases = [];
+
+        //global releases ids
+        this.releases = [];
+
         var baseReleaseName = '';
+        var baseReleaseId = '';
 
         console.log('project: ', project);
         var that = this;
@@ -49,11 +53,11 @@ Ext.define('CustomApp', {
         	scope: this,
         	listeners : {
         		ready: function(combobox) {
-        			//releaseId = combobox.getRecord().get('ObjectID');
+        			baseReleaseId = combobox.getRecord().get('ObjectID');
         			baseReleaseName = combobox.getRecord().get('Name');        			
         		},
 	        	select: function(combobox, records, opts) {
-        			//releaseId = combobox.getRecord().get('ObjectID');
+        			baseReleaseId = combobox.getRecord().get('ObjectID');
         			baseReleaseName = combobox.getRecord().get('Name');
 	        	}
 	        }
@@ -66,7 +70,7 @@ Ext.define('CustomApp', {
         	handler: function() {
         		//handles search
         		//console.log(initDate, endDate);
-        		this._doSearch(initDate, endDate, project, baseReleaseName);
+        		this._doSearch(initDate, endDate, project, baseReleaseName, baseReleaseId);
         	}
         });
 
@@ -110,12 +114,10 @@ Ext.define('CustomApp', {
 
     },
 
-    _doSearch: function(initDate, endDate, project, baseReleaseName) {
-    	console.log('looking for all releases:');
-
+    _doSearch: function(initDate, endDate, projectId, baseReleaseName, baseReleaseId) {
     	//gather all releases 
-    	console.log('parent release', baseReleaseName);
-    	console.log('looking for', initDate, endDate, project);
+    	console.log('parent release name: ', baseReleaseName);
+    	console.log('looking for:', initDate, endDate, projectId);
 
 
     	if (initDate == '' || endDate == '') {
@@ -124,18 +126,20 @@ Ext.define('CustomApp', {
 
     	this.myMask.show();
 
+
+    	//this recovers all releases from a parent project given the release name.
     	Ext.create('Rally.data.wsapi.Store', {
 		    model: 'Release',
 		    autoLoad: true,
 		    context: {
 		        projectScopeUp: false,
 		        projectScopeDown: true,
-		        project: 'project/' + project
+		        project: null //null to search all workspace
 		    },
 		    filters: [
 		            {
 		                property: 'Project.parent.ObjectID',
-		                value: project
+		                value: projectId
 		            },
 		            {
 		                property: 'name',
@@ -147,13 +151,22 @@ Ext.define('CustomApp', {
 		            //console.log('Store:', store);
 		            //console.log('Data:', data);
 
-		            var localReleases = [];
+		            //this checks if the project is a leaf. 
+		            //will return 0 child releases if so. else will return all releases id.
+		            if (data.length > 0) {
+		            	console.log('multiple releases found:', data);
+			            var localReleases = [];
 
-		            _.each(data, function(record) {
-			        	localReleases.push(record.get('ObjectID'));
-			        });
+			            _.each(data, function(record) {
+				        	localReleases.push(record.get('ObjectID'));
+				        });
 
-			        this.releases = localReleases;
+				        this.releases = localReleases;
+				        console.log('releases: ', this.releases);
+				    } else {
+				    	console.log('single release found, using baseReleaseId:', baseReleaseId);
+				    	this.releases.push(baseReleaseId);
+				    }
 
 			        this.filtersInit = [
 			    		{
@@ -167,7 +180,7 @@ Ext.define('CustomApp', {
 			            },
 			           	{
 			                property : '_ProjectHierarchy',
-			                value: project
+			                value: projectId
 			            },	            
 
 			            {
@@ -190,7 +203,7 @@ Ext.define('CustomApp', {
 			            },
 			           	{
 			                property : '_ProjectHierarchy',
-			                value: project
+			                value: projectId
 			            },
 			            {
 			                property : 'Release',
@@ -205,10 +218,6 @@ Ext.define('CustomApp', {
 		    },
 		    fetch: ['Description', 'Name', 'ObjectID']
 		});
-
-
-
-    	
     },
 
     _loadInitData: function () {
