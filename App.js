@@ -81,16 +81,15 @@ Ext.define('CustomApp', {
             items: [
                 {
 	                xtype: 'panel',
-	                title: 'Stories At Start Date',
+	                title: 'Features At Start Date',
 	                flex: 1,
 	                itemId: 'childPanel1'
-                },
-                {
+                },           {
                 	xtype:'splitter' 
                 },
                 {
 	                xtype: 'panel',
-	                title: 'Stories At End Date',
+	                title: 'Features At End Date',
 	                flex: 1,
 	                itemId: 'childPanel2'
                 }
@@ -223,7 +222,7 @@ Ext.define('CustomApp', {
     _loadInitData: function () {
     	console.log('loading init stories');
     	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
-            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', "State", "_ValidFrom", "_ValidTo", 'PlanEstimate', "ScheduleState"],
+            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
             filters : this.filtersInit,
             autoLoad: true,
 	        sorters : [
@@ -233,7 +232,7 @@ Ext.define('CustomApp', {
 	        	}
 	        ],
 
-            hydrate: ['ScheduleState', 'State'],
+            hydrate: ['State'],
 
             listeners: {
                 load: function(store, data, success) {
@@ -244,14 +243,12 @@ Ext.define('CustomApp', {
                 scope: this
             }
         });
-
-        //store.addFilter(this.filtersInit);
     },
 
     _loadEndData: function() {
     	console.log('loading end stories');
         var store2 = Ext.create('Rally.data.lookback.SnapshotStore', {
-            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', "State", "_ValidFrom", "_ValidTo", 'PlanEstimate', "ScheduleState"],
+            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
             filters : this.filtersEnd,
             autoLoad: true,
 	        sorters : [
@@ -261,7 +258,7 @@ Ext.define('CustomApp', {
 	        	}
 	        ],
 
-            hydrate: ['ScheduleState', 'State'],
+            hydrate: ['State'],
 
             listeners: {
                 load: function(store, data, success) {
@@ -275,7 +272,7 @@ Ext.define('CustomApp', {
     },
 
      //make grid of stories 
-    _onStoriesLoaded: function(records, panel) {
+    _onStoriesLoaded: function() {
         var that = this;
         var initFeatures = [];
         var endFeatures = [];
@@ -303,13 +300,13 @@ Ext.define('CustomApp', {
     		if (!Ext.Array.contains(initIds, id)) {
     			planned = false;
     		}
-            
+
             endFeatures.push({
+            	_ref: '/portfolioitem/feature/' + id,
                 Name: record.get('Name'),
                 FormattedID: record.get('FormattedID'),
-                PlanEstimate: record.get('PlanEstimate'),
-                ScheduleState: record.get('ScheduleState'),
                 State: record.get('State'),
+                PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
                 Planned: planned,
                 LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
                 
@@ -326,13 +323,13 @@ Ext.define('CustomApp', {
     		if (!Ext.Array.contains(endIds, id)) {
     			removed = true;
     		} 
-            
+
             initFeatures.push({
+            	_ref: '/portfolioitem/feature/' + id,
                 Name: record.get('Name'),
                 FormattedID: record.get('FormattedID'),
-                PlanEstimate: record.get('PlanEstimate'),
-                ScheduleState: record.get('ScheduleState'),
                 State: record.get('State'),
+                PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
                 Removed: removed,
                 LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
                 
@@ -360,14 +357,15 @@ Ext.define('CustomApp', {
 			showPagingToolbar: false,
 			enableEditing: false,
     		itemId : ''+panel+'Grid',
-    		id : ''+panel+'Grid',
     		store: myStore,
 
     		columnCfgs: [
                 {
-                    text: 'ID', 
+                	xtype: 'templatecolumn',
+                    text: 'ID',
                     dataIndex: 'FormattedID',
-                    tdCls: 'x-change-cell'
+                    tdCls: 'x-change-cell',
+                    tpl: Ext.create('Rally.ui.renderer.template.FormattedIDTemplate')
                 },
                 {
                     text: 'Name', 
@@ -376,14 +374,20 @@ Ext.define('CustomApp', {
                     tdCls: 'x-change-cell'
                 },
                 {
-                    text: 'Plan Estimate', 
+                    text: 'Sum of Story Plan Estimate', 
                     dataIndex: 'LeafStoryPlanEstimateTotal',
                     tdCls: 'x-change-cell'
                 },
                 {
-                    text: 'State', 
+                    text: 'Feature State', 
                     dataIndex: 'State',
                     tdCls: 'x-change-cell'
+                },
+                {
+                	xtype: 'templatecolumn',
+                    text: 'Percent Done By Story Plan Estimate', 
+                    dataIndex: 'PercentDoneByStoryPlanEstimate',
+                    tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate')                    
                 }
             ],
 
@@ -397,6 +401,7 @@ Ext.define('CustomApp', {
 			}
         	});
 
+		this.add(grid);
     	var gridHolder = this.down(panel);
         gridHolder.removeAll(true);
         gridHolder.add(grid);
@@ -412,9 +417,11 @@ Ext.define('CustomApp', {
     		store: myStore,
     		columnCfgs: [
                 {
+                	xtype: 'templatecolumn',
                     text: 'ID', 
                     dataIndex: 'FormattedID',
-                    tdCls: 'x-change-cell'
+                    tdCls: 'x-change-cell',
+                    tpl: Ext.create('Rally.ui.renderer.template.FormattedIDTemplate')
                 },
                 {
                     text: 'Name', 
@@ -423,14 +430,20 @@ Ext.define('CustomApp', {
                     tdCls: 'x-change-cell'
                 },
                 {
-                    text: 'Plan Estimate', 
+                    text: 'Sum of Story Plan Estimate', 
                     dataIndex: 'LeafStoryPlanEstimateTotal',
                     tdCls: 'x-change-cell'
                 },
                 {
-                    text: 'State', 
+                    text: 'Feature State', 
                     dataIndex: 'State',
                     tdCls: 'x-change-cell'
+                },
+                {
+                    xtype: 'templatecolumn',
+                    text: 'Percent Done By Story Plan Estimate', 
+                    dataIndex: 'PercentDoneByStoryPlanEstimate',
+                    tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate') 
                 }
             ],
             viewConfig: {
