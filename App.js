@@ -39,15 +39,7 @@ Ext.define('CustomApp', {
         	}
         });
 
-        var datePanel = Ext.create('Ext.panel.Panel', {
-            type: 'vbox',
-            align: 'stretch',
-            padding: 5,
-            itemId: 'datePanel',
-            componentCls: 'panel'            
-        });
-
-        var releaseComboBox = Ext.create('Rally.ui.combobox.ReleaseComboBox',{
+		var releaseComboBox = Ext.create('Rally.ui.combobox.ReleaseComboBox',{
         	itemId : 'releaseComboBox',
         	//allowClear: true,
         	scope: this,
@@ -66,6 +58,7 @@ Ext.define('CustomApp', {
 
         var searchButton = Ext.create('Rally.ui.Button', {
         	text: 'Search',
+        	margin: '10 10 10 100',
         	scope: this,
         	handler: function() {
         		//handles search
@@ -73,6 +66,28 @@ Ext.define('CustomApp', {
         		this._doSearch(initDate, endDate, project, baseReleaseName, baseReleaseId);
         	}
         });
+
+
+        var datePanel = Ext.create('Ext.panel.Panel', {
+            layout: 'hbox',
+            align: 'stretch',
+            padding: 5,
+            itemId: 'datePanel',
+            items: [
+                {
+	                xtype: 'panel',
+	                flex: 1,
+	                itemId: 'filterPanel'
+                },
+                {
+	                xtype: 'panel',
+	                flex: 1,
+	                itemId: 'tooltipPanel'
+                }
+            ]
+                       
+        });
+
 
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'hbox',
@@ -93,7 +108,7 @@ Ext.define('CustomApp', {
 	                flex: 1,
 	                itemId: 'childPanel2'
                 }
-            ],
+            ]
         });
 
 
@@ -104,10 +119,42 @@ Ext.define('CustomApp', {
 
 
         this.add(datePanel);
-        datePanel.add(initDatePicker);
-        datePanel.add(endDatePicker);
-        datePanel.add(releaseComboBox);
-        datePanel.add(searchButton);
+        datePanel.down('#filterPanel').add(initDatePicker);
+        datePanel.down('#filterPanel').add(endDatePicker);
+        datePanel.down('#filterPanel').add(releaseComboBox);
+        datePanel.down('#filterPanel').add(searchButton);
+
+        datePanel.down('#tooltipPanel').add({
+            id: 'tooltipContent1',
+            padding: 5,
+            height: 45,
+            overflowX: 'auto',
+            overflowY: 'auto',
+            html: '<div style= "clear:both">'+
+            		'<div style="background-color:#cdf9c2; width:20px; height:20px; margin:5px; float:left;"></div>'+
+            		'<div style="height:20px; margin:5px; float:left;">Features present at start date and at the end date with state <b>Staging</b> or <b>Done</b>.</div>'+
+            	  '</div>'
+        },{
+            id: 'tooltipContent2',
+            padding: 5,
+            height: 45,
+            overflowX: 'auto',
+            overflowY: 'auto',
+            html: '<div style= "clear:both">'+
+            		'<div style="background-color:#c2d7f9; width:20px; height:20px; margin:5px; float:left;"></div>'+
+            		'<div style="height:20px; margin:5px; float:left;">Features absent at the start date and present at end date.</div>'+
+            	  '</div>'
+        },{
+            id: 'tooltipContent3',
+            padding: 5,
+            height: 45,
+            overflowX: 'auto',
+            overflowY: 'auto',
+            html: '<div style= "clear:both">'+
+            		'<div style="background-color:#ffe2e2; width:20px; height:20px; margin:5px; float:left;"></div>'+
+            		'<div style="height:20px; margin:5px; float:left;">Features present at the start date, but absent at end date.</div>'+
+            	  '</div>'
+        });
 
         this.add(mainPanel);
 
@@ -124,6 +171,9 @@ Ext.define('CustomApp', {
     	}
 
     	this.myMask.show();
+
+    	//clear relase filter:
+    	this.releases = [];
 
 
     	//this recovers all releases from a parent project given the release name.
@@ -164,7 +214,7 @@ Ext.define('CustomApp', {
 				        console.log('releases: ', this.releases);
 				    } else {
 				    	console.log('single release found, using baseReleaseId:', baseReleaseId);
-				    	this.releases.push(baseReleaseId);
+				    	this.releases = [baseReleaseId];
 				    }
 
 			        this.filtersInit = [
@@ -221,6 +271,7 @@ Ext.define('CustomApp', {
 
     _loadInitData: function () {
     	console.log('loading init stories');
+    	//console.log('filters:', this.filtersInit);
     	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
             filters : this.filtersInit,
@@ -293,12 +344,19 @@ Ext.define('CustomApp', {
 
         //find features not planned / items on endItems that were not included in initItems
         _.each(this.endItems, function(record) {
-            id = record.get('ObjectID');
+            var id = record.get('ObjectID');
+            var state = record.get('State');
+
             var planned = true;
+            var completed = false;
 
             //console.log('checking if', id, 'exists in', initIds);
     		if (!Ext.Array.contains(initIds, id)) {
     			planned = false;
+    		}
+
+    		if (state == 'Done' || state == 'Staging') {
+    			completed = true;
     		}
 
             endFeatures.push({
@@ -308,6 +366,7 @@ Ext.define('CustomApp', {
                 State: record.get('State'),
                 PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
                 Planned: planned,
+                Completed: completed,
                 LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
                 
             });
@@ -322,7 +381,7 @@ Ext.define('CustomApp', {
             //console.log('checking if', id, 'exists in', endIds);
     		if (!Ext.Array.contains(endIds, id)) {
     			removed = true;
-    		} 
+    		}
 
             initFeatures.push({
             	_ref: '/portfolioitem/feature/' + id,
@@ -374,7 +433,7 @@ Ext.define('CustomApp', {
                     tdCls: 'x-change-cell'
                 },
                 {
-                    text: 'Sum of Story Plan Estimate', 
+                    text: 'Leaf Story Plan Estimate Total', 
                     dataIndex: 'LeafStoryPlanEstimateTotal',
                     tdCls: 'x-change-cell'
                 },
@@ -387,7 +446,12 @@ Ext.define('CustomApp', {
                 	xtype: 'templatecolumn',
                     text: 'Percent Done By Story Plan Estimate', 
                     dataIndex: 'PercentDoneByStoryPlanEstimate',
-                    tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate')                    
+                    tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate', {
+                    	isClickable: false,
+                    	showDangerNotificationFn : function() {
+                    		return false;
+                    	}
+                    })                 
                 }
             ],
 
@@ -430,7 +494,7 @@ Ext.define('CustomApp', {
                     tdCls: 'x-change-cell'
                 },
                 {
-                    text: 'Sum of Story Plan Estimate', 
+                    text: 'Leaf Story Plan Estimate Total', 
                     dataIndex: 'LeafStoryPlanEstimateTotal',
                     tdCls: 'x-change-cell'
                 },
@@ -443,7 +507,12 @@ Ext.define('CustomApp', {
                     xtype: 'templatecolumn',
                     text: 'Percent Done By Story Plan Estimate', 
                     dataIndex: 'PercentDoneByStoryPlanEstimate',
-                    tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate') 
+                    tpl: Ext.create('Rally.ui.renderer.template.progressbar.PercentDoneByStoryPlanEstimateTemplate', {
+                    	isClickable: false,
+                    	showDangerNotificationFn : function() {
+                    		return false;
+                    	}
+                    })
                 }
             ],
             viewConfig: {
@@ -451,6 +520,9 @@ Ext.define('CustomApp', {
 			    	if (record.get('Planned') == false) {
 			    		//console.log('changing css for records', record, 'index', rowIndex);
 			    		return 'new-feature';
+			    	}
+			    	if (record.get('Completed')  == true) {
+			    		return 'completed';
 			    	}
     			}
 			}
