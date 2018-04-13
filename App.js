@@ -185,16 +185,43 @@ Ext.define('CustomApp', {
 		        projectScopeDown: true,
 		        project: null //null to search all workspace
 		    },
-		    filters: [
-		            {
-		                property: 'Project.parent.ObjectID',
-		                value: projectId
-		            },
-		            {
-		                property: 'name',
-		                value: baseReleaseName
-		            }
-	        ],
+
+
+			filters: Rally.data.QueryFilter.or([
+
+				Rally.data.QueryFilter.and([
+					{
+						property: 'Project.parent.ObjectID',
+						value: projectId
+					},
+					{
+						property: 'name',
+						value: baseReleaseName
+					}	
+				]),
+				
+				Rally.data.QueryFilter.and([
+					{
+						property: 'Project.parent.parent.ObjectID',
+						value: projectId
+					},
+					{
+						property: 'name',
+						value: baseReleaseName
+					}	
+				])
+			]),
+
+		    // filters: [
+		    //         {
+		    //             property: 'Project.parent.ObjectID',
+		    //             value: projectId
+		    //         },
+		    //         {
+		    //             property: 'name',
+		    //             value: baseReleaseName
+		    //         }
+	     //    ],
 		    listeners: {
 		        load: function(store, data, success) {
 		            //console.log('Store:', store);
