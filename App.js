@@ -300,7 +300,7 @@ Ext.define('CustomApp', {
     	console.log('loading init stories');
     	//console.log('filters:', this.filtersInit);
     	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
-            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
+            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'Parent', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
             filters : this.filtersInit,
             autoLoad: true,
 	        sorters : [
@@ -326,7 +326,7 @@ Ext.define('CustomApp', {
     _loadEndData: function() {
     	console.log('loading end stories');
         var store2 = Ext.create('Rally.data.lookback.SnapshotStore', {
-            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
+            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'Parent', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
             filters : this.filtersEnd,
             autoLoad: true,
 	        sorters : [
@@ -358,84 +358,155 @@ Ext.define('CustomApp', {
         var endIds = [];
         var id;
 
+        var parentIds = [];
+
 		_.each(this.initItems, function(record) {
         	initIds.push(record.get('ObjectID'));
+
+            var parent;
+            if (record.get('Parent') != "") {
+                parent = record.get('Parent');
+            }
+
+            if (parent && !Ext.Array.contains(parentIds, parent)) {
+                parentIds.push(parent);
+            }
         });
         console.log('initIds', initIds);
 
         _.each(this.endItems, function(record) {
         	endIds.push(record.get('ObjectID'));
+
+            var parent;
+            if (record.get('Parent') != "") {
+                parent = record.get('Parent');
+            }
+
+            if (parent && !Ext.Array.contains(parentIds, parent)) {
+                parentIds.push(parent);
+            }
         });
         console.log('endIds', endIds);
 
+        var promise = this._loadParentNames(parentIds);
+        Deft.Promise.all([promise]).then({
+            success: function(records) {
+                var parentNames = records[0];
 
-        //find features not planned / items on endItems that were not included in initItems
-        _.each(this.endItems, function(record) {
-            var id = record.get('ObjectID');
-            var state = record.get('State');
+                //find features not planned / items on endItems that were not included in initItems
+                _.each(this.endItems, function(record) {
+                    var id = record.get('ObjectID');
+                    var state = record.get('State');
 
-            var planned = true;
-            var completed = false;
+                    var planned = true;
+                    var completed = false;
 
-            //console.log('checking if', id, 'exists in', initIds);
-    		if (!Ext.Array.contains(initIds, id)) {
-    			planned = false;
-    		}
+                    //console.log('checking if', id, 'exists in', initIds);
+                    if (!Ext.Array.contains(initIds, id)) {
+                        planned = false;
+                    }
 
-    		if (state == 'Done' || state == 'Staging') {
-    			completed = true;
-    		}
+                    if (state == 'Done' || state == 'Staging') {
+                        completed = true;
+                    }
 
-            endFeatures.push({
-            	_ref: '/portfolioitem/feature/' + id,
-                Name: record.get('Name'),
-                FormattedID: record.get('FormattedID'),
-                State: record.get('State'),
-                PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
-                Planned: planned,
-                Completed: completed,
-                LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
+                    endFeatures.push({
+                        _ref: '/portfolioitem/feature/' + id,
+                        Name: record.get('Name'),
+                        FormattedID: record.get('FormattedID'),
+                        State: record.get('State'),
+                        PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
+                        Planned: planned,
+                        Parent: parentNames.get(record.get('Parent')),
+                        Completed: completed,
+                        LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
+                        
+                    });
+                }, this);
+
+
+                //find feature that were not delivered / items on initItems that were not included in endItems.
+                 _.each(this.initItems, function(record) {
+                    id = record.get('ObjectID');
+                    var removed = false;
+
+                    //console.log('checking if', id, 'exists in', endIds);
+                    if (!Ext.Array.contains(endIds, id)) {
+                        removed = true;
+                    }
+
+                    initFeatures.push({
+                        _ref: '/portfolioitem/feature/' + id,
+                        Name: record.get('Name'),
+                        FormattedID: record.get('FormattedID'),
+                        State: record.get('State'),
+                        PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
+                        Removed: removed,
+                        Parent: parentNames.get(record.get('Parent')),
+                        LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
+                        
+                    });
+                }, this);
+
                 
-            });
-        }, this);
+                var initStore = Ext.create('Rally.data.custom.Store', {
+                    data: initFeatures,
+                    pageSize: 1000
+                });
+
+                var endStore = Ext.create('Rally.data.custom.Store', {
+                    data: endFeatures,
+                    pageSize: 1000
+                });
+
+                this._createInitGrid(initStore, '#childPanel1');
+                this._createEndGrid(endStore, '#childPanel2');
+            },
+            failure: function(error) {
+                console.log('error:', error);
+            },
+            scope: this
+        });
 
 
-        //find feature that were not delivered / items on initItems that were not included in endItems.
-         _.each(this.initItems, function(record) {
-            id = record.get('ObjectID');
-            var removed = false;
-
-            //console.log('checking if', id, 'exists in', endIds);
-    		if (!Ext.Array.contains(endIds, id)) {
-    			removed = true;
-    		}
-
-            initFeatures.push({
-            	_ref: '/portfolioitem/feature/' + id,
-                Name: record.get('Name'),
-                FormattedID: record.get('FormattedID'),
-                State: record.get('State'),
-                PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
-                Removed: removed,
-                LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
-                
-            });
-        }, this);
-
-        
-        var initStore = Ext.create('Rally.data.custom.Store', {
-        	data: initFeatures,
-        	pageSize: 1000
-		});
-
-		var endStore = Ext.create('Rally.data.custom.Store', {
-        	data: endFeatures,
-        	pageSize: 1000
-		});
-
-		this._createInitGrid(initStore, '#childPanel1');
-		this._createEndGrid(endStore, '#childPanel2');
      },
+
+
+     _loadParentNames: function(parentIds) {
+        var parentNames = new Ext.util.MixedCollection();
+        var deferred = Ext.create('Deft.Deferred');
+
+        Ext.create('Rally.data.wsapi.artifact.Store', {
+            models: ['PortfolioItem/Initiative'],
+            fetch: ['Name'],
+            context: {
+                projectScopeUp: false,
+                projectScopeDown: true,
+                project: null //null to search all workspace
+            },
+            filters: [{
+                property: 'ObjectID',
+                operator: 'in',
+                value: parentIds
+            }]
+        }).load({
+            callback: function(records, operation, success) {
+                if (success) {
+                    _.each(records, function(record) {
+                        parentNames.add(record.get('ObjectID'), record.get('Name'));
+                    });
+
+                    //console.log(parentNames);
+                    deferred.resolve(parentNames);
+                } else {
+                    deferred.reject("Error loading parents.");
+                }
+            }
+        });
+
+        return deferred.promise;
+    },
+
 
      _createInitGrid: function(myStore, panel) {
 		var grid = Ext.create('Rally.ui.grid.Grid', {
@@ -456,6 +527,12 @@ Ext.define('CustomApp', {
                 {
                     text: 'Name', 
                     dataIndex: 'Name',
+                    flex: 1,
+                    tdCls: 'x-change-cell'
+                },
+                {
+                    text: 'Parent',
+                    dataIndex: 'Parent',
                     flex: 1,
                     tdCls: 'x-change-cell'
                 },
@@ -498,6 +575,7 @@ Ext.define('CustomApp', {
         gridHolder.add(grid);
      },
 
+
      _createEndGrid: function(myStore, panel) {
 		var grid = Ext.create('Rally.ui.grid.Grid', {
 			showRowActionsColumn: false,
@@ -517,6 +595,12 @@ Ext.define('CustomApp', {
                 {
                     text: 'Name', 
                     dataIndex: 'Name',
+                    flex: 1,
+                    tdCls: 'x-change-cell'
+                },
+                {
+                    text: 'Parent',
+                    dataIndex: 'Parent',
                     flex: 1,
                     tdCls: 'x-change-cell'
                 },
