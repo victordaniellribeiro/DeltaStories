@@ -76,15 +76,26 @@
         	}
         });
 
-        var summaryPanel = Ext.create('Ext.panel.Panel', {
-            title: 'Summary',
+        var featureSummaryPanel = Ext.create('Ext.panel.Panel', {
+            title: 'Feature Summary',
             layout: {
                 type: 'vbox',
                 align: 'stretch',
                 padding: 5
             },
             padding: 5,
-            itemId: 'summaryPanel',
+            itemId: 'featureSummaryPanel',
+        });
+
+        var storySummaryPanel = Ext.create('Ext.panel.Panel', {
+            title: 'Story Summary',
+            layout: {
+                type: 'vbox',
+                align: 'stretch',
+                padding: 5
+            },
+            padding: 5,
+            itemId: 'storySummaryPanel',
         });
 
         var datePanel = Ext.create('Ext.panel.Panel', {
@@ -174,7 +185,8 @@
             	  '</div>'
         });
 
-        this.add(summaryPanel);
+        this.add(featureSummaryPanel);
+        this.add(storySummaryPanel);
         this.add(mainPanel);
 
     },
@@ -309,7 +321,16 @@
     	console.log('loading init stories');
     	//console.log('filters:', this.filtersInit);
     	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
-            fetch    : ['Name', 'FormattedID', 'LeafStoryPlanEstimateTotal', 'State', 'Parent', 'PercentDoneByStoryPlanEstimate', "_ValidFrom", "_ValidTo"],
+            fetch : ['Name', 
+                'FormattedID', 
+                'LeafStoryPlanEstimateTotal', 
+                'LeafStoryCount', 
+                'PreliminaryEstimate', 
+                'State', 
+                'Parent', 
+                'PercentDoneByStoryPlanEstimate', 
+                "_ValidFrom", 
+                "_ValidTo"],
             filters : this.filtersInit,
             autoLoad: true,
 	        sorters : [
@@ -318,12 +339,12 @@
 		            direction: 'ASC'
 	        	}
 	        ],
-
+            limit: Infinity,
             hydrate: ['State'],
 
             listeners: {
                 load: function(store, data, success) {
-                	//console.log('Init Store', store);
+                	console.log('Init Store', store);
                 	this.initItems = data;
                 	this._loadEndData();
                 },
@@ -335,9 +356,10 @@
     _loadEndData: function() {
         console.log('loading end stories');
         var store2 = Ext.create('Rally.data.lookback.SnapshotStore', {
-            fetch: ['Name',
+            fetch : ['Name',
                 'FormattedID',
                 'LeafStoryPlanEstimateTotal',
+                'PreliminaryEstimate',
                 'State',
                 'Parent',
                 'PercentDoneByStoryPlanEstimate',
@@ -354,7 +376,7 @@
                 property: 'ObjectID',
                 direction: 'ASC'
             }],
-
+            limit: Infinity,
             hydrate: ['State'],
 
             listeners: {
@@ -440,6 +462,7 @@
                         Completed: completed,
                         LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal'),
                         LeafStoryCount: record.get('LeafStoryCount'),
+                        PreliminaryEstimate: record.get('PreliminaryEstimate'),
                         AcceptedLeafStoryCount: record.get('AcceptedLeafStoryCount'),
                         AcceptedLeafStoryPlanEstimateTotal: record.get('AcceptedLeafStoryPlanEstimateTotal'),
                         ActualEndDate: record.get('ActualEndDate')
@@ -466,7 +489,9 @@
                         PercentDoneByStoryPlanEstimate: record.get('PercentDoneByStoryPlanEstimate'),
                         Removed: removed,
                         Parent: parentNames.get(record.get('Parent')),
-                        LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal')
+                        LeafStoryPlanEstimateTotal: record.get('LeafStoryPlanEstimateTotal'),
+                        LeafStoryCount: record.get('LeafStoryCount'),
+                        PreliminaryEstimate: record.get('PreliminaryEstimate')
                         
                     });
                 }, this);
@@ -491,7 +516,7 @@
             },
             scope: this
         });
-     },
+    },
 
 
     _loadParentNames: function(parentIds) {
@@ -512,6 +537,7 @@
                 operator: 'in',
                 value: parentIds
             }],
+            limit: Infinity,
             listeners: {
                 load: function(store, data, success) {
                     _.each(data, function(record) {
@@ -520,6 +546,36 @@
                     });
 
                     deferred.resolve(parentNames);
+                }
+            }, scope: this
+        });
+
+        return deferred.promise;
+    },
+
+
+    _loadPreliminaryEstimates: function() {
+        var estimates = new Ext.util.MixedCollection();
+        var deferred = Ext.create('Deft.Deferred');
+
+        Ext.create('Rally.data.wsapi.Store', {
+            model: 'PreliminaryEstimate',
+            autoLoad: true,
+            fetch: ['Name', 'ObjectID', 'Value'],
+            context: {
+                projectScopeUp: false,
+                projectScopeDown: true,
+                project: null //null to search all workspace
+            },
+            limit: Infinity,
+            listeners: {
+                load: function(store, data, success) {
+                    _.each(data, function(record) {
+                        var estimateValue = record.get('Value');
+                        estimates.add(record.get('ObjectID'), estimateValue);
+                    });
+
+                    deferred.resolve(estimates);
                 }
             }, scope: this
         });
@@ -673,89 +729,188 @@
 
 
     _createSummaryGrid: function(initItems, endItems) {
-        var totalCount = 0;
-        var totalEstimate = 0;
-        var totalCountEnd = 0;
-        var totalEstimateEnd = 0;
+        var totalFeatureCount = 0;
+        var totalPreliminaryEstimate = 0;
         var totalCountRemoved = 0;
-        var totalEstimateRemoved = 0;
+        var totalPreliminaryEstimateRemoved = 0;
+
+        var totalFeatureCountEnd = 0;
+        var totalPreliminaryEstimateEnd = 0;
         var totalCountAdded = 0;
-        var totalEstimateAdded = 0;
+        var totalPreliminaryEstimateAdded = 0;
         var totalCountCompleted = 0;
-        var totalEstimateCompleted = 0;
+        var totalPreliminaryEstimateCompleted = 0;
+        var totalCountNotCompleted = 0;
+        var totalPreliminaryEstimateNotCompleted = 0;
+
+        var totalStoryCount = 0;
+        var totalStoryEstimate = 0;
+        var totalStoryCountRemoved = 0;
+        var totalStoryEstimateRemoved = 0;
+
+        var totalStoryCountEnd = 0;
+        var totalStoryEstimateEnd = 0;
+        var totalStoryCountAdded = 0;
+        var totalStoryEstimateAdded = 0;
+        var totalStoryCountCompleted = 0;
+        var totalStoryEstimateCompleted = 0;
         var totalStoryCountNotCompleted = 0;
         var totalStoryEstimateNotCompleted = 0;
+
         var totalStoryCountAccepted = 0;
         var totalStoryEstimateAccepted = 0;
-        var totalStoryCount = 0;
-
-        _.each(initItems, function(record) {
-            totalCount += 1;
-            totalEstimate += record['LeafStoryPlanEstimateTotal'];
-
-            if (record['Removed']) {
-                totalCountRemoved += 1;
-                totalEstimateRemoved += record['LeafStoryPlanEstimateTotal'];
-            }
-        });
-
-        _.each(endItems, function(record) {
-            totalCountEnd += 1;
-            totalEstimateEnd += record['LeafStoryPlanEstimateTotal'];
-            totalStoryCount += record['LeafStoryCount'];
-
-            totalStoryCountAccepted += record['AcceptedLeafStoryCount'];
-            totalStoryEstimateAccepted += record['AcceptedLeafStoryPlanEstimateTotal'];
-
-            if (!record['Planned']) {
-                totalCountAdded += 1;
-                totalEstimateAdded += record['LeafStoryPlanEstimateTotal'];
-            }
-
-            if (record['State'] == 'Staging' || record['State'] == 'Done') {
-                totalCountCompleted += 1;
-                totalEstimateCompleted += record['LeafStoryPlanEstimateTotal'];
-            }
-        });
-
-        totalStoryCountNotCompleted = totalStoryCount - totalStoryCountAccepted;
-        totalStoryEstimateNotCompleted = totalEstimateEnd - totalStoryEstimateAccepted;
-
-        var data = [];
-        data.push({
-            totalCount: totalCount,
-            totalEstimate: totalEstimate,
-            totalCountRemoved: totalCountRemoved,
-            totalEstimateRemoved: totalEstimateRemoved,
-            totalCountEnd: totalCountEnd,
-            totalEstimateEnd: totalEstimateEnd,
-            totalCountAdded: totalCountAdded,
-            totalEstimateAdded: totalEstimateAdded,
-            totalCountCompleted: totalCountCompleted,
-            totalEstimateCompleted: totalEstimateCompleted,
-            totalStoryCountNotCompleted: totalStoryCountNotCompleted,
-            totalStoryEstimateNotCompleted: totalStoryEstimateNotCompleted
-        });
-
-        var store = Ext.create('Ext.data.JsonStore', {
-            fields: ['totalCount', 
-            'totalEstimate', 
-            'totalCountRemoved', 
-            'totalEstimateRemoved', 
-            'totalCountEnd', 
-            'totalEstimateEnd', 
-            'totalCountAdded', 
-            'totalEstimateAdded',
-            'totalCountCompleted',
-            'totalEstimateCompleted',
-            'totalStoryCountNotCompleted',
-            'totalStoryEstimateNotCompleted']
-        });
 
 
-        store.loadData(data);
+        var promise = this._loadPreliminaryEstimates();
+        Deft.Promise.all([promise]).then({
+            success: function(records) {
+                console.log('preliminary estimates loaded', records[0]);
 
-        var grid = Ext.create('Ext.grid.Panel', {
+                var preliminaryEstimates = records[0];
+
+                _.each(initItems, function(record) {
+                    totalFeatureCount += 1;
+                    totalStoryCount += record['LeafStoryCount'];
+                    totalStoryEstimate += record['LeafStoryPlanEstimateTotal'];
+
+                    if (record['PreliminaryEstimate'] != '') {
+                        totalPreliminaryEstimate += preliminaryEstimates.get(record['PreliminaryEstimate']);
+                    }
+
+                    if (record['Removed']) {
+                        totalCountRemoved += 1;
+                        totalStoryCountRemoved += record['LeafStoryCount'];
+                        totalStoryEstimateRemoved += record['LeafStoryPlanEstimateTotal'];
+
+                        if (record['PreliminaryEstimate'] != '') {                            
+                            totalPreliminaryEstimateRemoved += preliminaryEstimates.get(record['PreliminaryEstimate']);
+                        }
+                    }
+                });
+
+                _.each(endItems, function(record) {
+                    totalFeatureCountEnd += 1;
+                    totalStoryCountEnd += record['LeafStoryCount'];
+                    totalStoryEstimateEnd += record['LeafStoryPlanEstimateTotal'];
+
+                    totalStoryCountAccepted += record['AcceptedLeafStoryCount'];
+                    totalStoryEstimateAccepted += record['AcceptedLeafStoryPlanEstimateTotal'];
+
+                    if (record['PreliminaryEstimate'] != '') {
+                        totalPreliminaryEstimateEnd += preliminaryEstimates.get(record['PreliminaryEstimate']);
+                    }
+
+                    if (!record['Planned']) {
+                        totalCountAdded += 1;
+                        totalStoryCountAdded += record['LeafStoryCount'];
+                        totalStoryEstimateAdded += record['LeafStoryPlanEstimateTotal'];
+
+                        if (record['PreliminaryEstimate'] != '') {
+                            totalPreliminaryEstimateAdded += preliminaryEstimates.get(record['PreliminaryEstimate']);
+                        }
+                    }
+
+                    if (record['State'] == 'Staging' || record['State'] == 'Done') {
+                        totalCountCompleted += 1;
+                        totalStoryCountCompleted += record['LeafStoryCount'];
+                        totalStoryEstimateCompleted += record['LeafStoryPlanEstimateTotal'];
+
+                        if (record['PreliminaryEstimate'] != '') {
+                            totalPreliminaryEstimateCompleted += preliminaryEstimates.get(record['PreliminaryEstimate']);
+                        }
+                    }
+
+
+                    if (record['State'] != 'Staging' && record['State'] != 'Done') {
+                        totalCountNotCompleted += 1;
+
+                        if (record['PreliminaryEstimate'] != '') {
+                            totalPreliminaryEstimateNotCompleted += preliminaryEstimates.get(record['PreliminaryEstimate']);
+                        }
+                    }
+                });
+
+                totalStoryCountNotCompleted = totalStoryCountEnd - totalStoryCountAccepted;
+                totalStoryEstimateNotCompleted = totalStoryEstimateEnd - totalStoryEstimateAccepted;
+
+                var data = [];
+                data.push({
+                    totalFeatureCount: totalFeatureCount,
+                    totalPreliminaryEstimate: totalPreliminaryEstimate,
+                    totalCountRemoved: totalCountRemoved,
+                    totalPreliminaryEstimateRemoved: totalPreliminaryEstimateRemoved,
+
+                    totalFeatureCountEnd: totalFeatureCountEnd,
+                    totalPreliminaryEstimateEnd: totalPreliminaryEstimateEnd,
+                    totalCountAdded: totalCountAdded,
+                    totalPreliminaryEstimateAdded: totalPreliminaryEstimateAdded,
+                    totalCountCompleted: totalCountCompleted,
+                    totalPreliminaryEstimateCompleted: totalPreliminaryEstimateCompleted,
+                    totalCountNotCompleted: totalCountNotCompleted,
+                    totalPreliminaryEstimateNotCompleted: totalPreliminaryEstimateNotCompleted,
+
+                    totalStoryCount: totalStoryCount,
+                    totalStoryEstimate: totalStoryEstimate,
+                    totalStoryCountRemoved: totalStoryCountRemoved,
+                    totalStoryEstimateRemoved: totalStoryEstimateRemoved,
+
+                    totalStoryCountEnd: totalStoryCountEnd,
+                    totalStoryEstimateEnd: totalStoryEstimateEnd,
+                    totalStoryCountAdded: totalStoryCountAdded,
+                    totalStoryEstimateAdded: totalStoryEstimateAdded,
+                    totalStoryCountCompleted: totalStoryCountCompleted,
+                    totalStoryEstimateCompleted: totalStoryEstimateCompleted,
+
+                    totalStoryCountNotCompleted: totalStoryCountNotCompleted,
+                    totalStoryEstimateNotCompleted: totalStoryEstimateNotCompleted
+                });
+
+                var store = Ext.create('Ext.data.JsonStore', {
+                    fields: ['totalFeatureCount', 
+                    'totalPreliminaryEstimate',
+                    'totalCountRemoved', 
+                    'totalPreliminaryEstimateRemoved',
+
+                    'totalFeatureCountEnd',
+                    'totalPreliminaryEstimateEnd',
+                    'totalCountAdded', 
+                    'totalPreliminaryEstimateAdded',
+                    'totalCountCompleted',
+                    'totalPreliminaryEstimateCompleted',
+                    'totalCountNotCompleted',
+                    'totalPreliminaryEstimateNotCompleted',
+
+                    'totalStoryCount',
+                    'totalStoryEstimate',
+                    'totalStoryCountRemoved',
+                    'totalStoryEstimateRemoved',
+
+                    'totalStoryCountEnd',
+                    'totalStoryEstimateEnd',
+                    'totalStoryCountAdded',
+                    'totalStoryEstimateAdded',
+                    'totalStoryCountCompleted',
+                    'totalStoryEstimateCompleted',
+
+                    'totalStoryCountNotCompleted',
+                    'totalStoryEstimateNotCompleted']
+                });
+
+
+                store.loadData(data);
+                this._createFeatureSummaryGrid(store);
+                this._createStorySummaryGrid(store);
+            },
+            failure: function(error) {
+                console.log('error:', error);
+            },
+            scope: this
+        });        
+    },
+
+
+    _createFeatureSummaryGrid: function(store) {
+        var featureGrid = Ext.create('Ext.grid.Panel', {
             store: store,
             height: 85,
             forceFit: true,
@@ -770,22 +925,22 @@
                     text: 'Total Count',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalCount'
+                    dataIndex: 'totalFeatureCount'
                 }, {
-                    text: 'Total Estimate',
+                    text: 'Total Preliminary Estimate',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalEstimate'
+                    dataIndex: 'totalPreliminaryEstimate'
                 }, {
                     text: 'Total Count Removed',
                     flex: 1,
                     sortable: false,
                     dataIndex: 'totalCountRemoved'
                 }, {
-                    text: 'Total Estimate Removed',
+                    text: 'Total Preliminary Estimate Removed',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalEstimateRemoved'
+                    dataIndex: 'totalPreliminaryEstimateRemoved'
                 }]
             }, {
                 text: 'End Items',
@@ -793,32 +948,116 @@
                     text: 'Total Count',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalCountEnd'
+                    dataIndex: 'totalFeatureCountEnd'
                 }, {
-                    text: 'Total Estimate',
+                    text: 'Total Preliminary Estimate',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalEstimateEnd'
+                    dataIndex: 'totalPreliminaryEstimateEnd'
                 }, {
                     text: 'Total Count Added',
                     flex: 1,
                     sortable: false,
                     dataIndex: 'totalCountAdded'
                 }, {
-                    text: 'Total Estimate Added',
+                    text: 'Total Preliminary Estimate Added',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalEstimateAdded'
+                    dataIndex: 'totalPreliminaryEstimateAdded'
                 }, {
                     text: 'Total Count Completed',
                     flex: 1,
                     sortable: false,
                     dataIndex: 'totalCountCompleted'
                 }, {
+                    text: 'Total Preliminary Estimate Completed',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalPreliminaryEstimateCompleted'
+                }, {
+                    text: 'Total Count Not Completed',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalCountNotCompleted'
+                }, {
+                    text: 'Total Preliminary Estimate Not Completed',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalPreliminaryEstimateNotCompleted'
+                }]
+            }]
+        });
+
+        this.down('#featureSummaryPanel').removeAll(true);
+        this.down('#featureSummaryPanel').add(featureGrid);
+    }, 
+
+
+    _createStorySummaryGrid: function(store) {
+        var storyGrid = Ext.create('Ext.grid.Panel', {
+            store: store,
+            height: 85,
+            forceFit: true,
+            viewConfig: {
+                //stripeRows: true,
+                enableTextSelection: true
+            },
+            columns: [{
+                text: 'Start Items',
+                flex: 1,
+                columns: [{
+                    text: 'Total Count',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryCount'
+                }, {
+                    text: 'Total Estimate',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryEstimate'
+                }, {
+                    text: 'Total Count Removed',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryCountRemoved'
+                }, {
+                    text: 'Total Estimate Removed',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryEstimateRemoved'
+                }]
+            }, {
+                text: 'End Items',
+                columns: [{
+                    text: 'Total Count',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryCountEnd'
+                }, {
+                    text: 'Total Estimate',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryEstimateEnd'
+                }, {
+                    text: 'Total Count Added',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryCountAdded'
+                }, {
+                    text: 'Total Estimate Added',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryEstimateAdded'
+                }, {
+                    text: 'Total Count Completed',
+                    flex: 1,
+                    sortable: false,
+                    dataIndex: 'totalStoryCountCompleted'
+                }, {
                     text: 'Total Estimate Completed',
                     flex: 1,
                     sortable: false,
-                    dataIndex: 'totalEstimateCompleted'
+                    dataIndex: 'totalStoryEstimateCompleted'
                 }, {
                     text: 'Total Story Count Not Completed',
                     flex: 1,
@@ -832,10 +1071,11 @@
                 }]
             }]
         });
+        
 
-        this.down('#summaryPanel').removeAll(true);
-        this.down('#summaryPanel').add(grid);
-    }
+        this.down('#storySummaryPanel').removeAll(true);
+        this.down('#storySummaryPanel').add(storyGrid);
+    }, 
 });
 
 
