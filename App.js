@@ -4,7 +4,8 @@ Ext.define('CustomApp', {
     launch: function() {
         //API Docs: https://help.rallydev.com/apps/2.1/doc/    
         var context =  this.getContext();
-        var project = context.getProject()['ObjectID'];        
+        var project = context.getProject()['ObjectID'];
+        this.projectId = project;        
         //var project = 90681998188;
 
         var initDate = '';
@@ -21,6 +22,7 @@ Ext.define('CustomApp', {
 
         var initDatePicker = Ext.create('Ext.form.field.Date', {
         	fieldLabel: 'From:',
+            scope: this,
         	listeners : {
         		select: function(picker, date) {
         			//console.log(date);
@@ -134,7 +136,7 @@ Ext.define('CustomApp', {
 
         this.myMask = new Ext.LoadMask({
 		    msg    : 'Please wait...',
-		    target : mainPanel
+		    target : this
 		});
 
 
@@ -182,10 +184,13 @@ Ext.define('CustomApp', {
 
     },
 
+
     _doSearch: function(initDate, endDate, projectId, baseReleaseName, baseReleaseId) {
     	//gather all releases 
     	console.log('parent release name: ', baseReleaseName);
     	console.log('looking for:', initDate, endDate, projectId);
+        this.initDate = initDate;
+        this.endDate = endDate;
 
 
     	if (initDate == '' || endDate == '') {
@@ -304,12 +309,14 @@ Ext.define('CustomApp', {
 		        },
 		        scope: this
 		    },
-		    fetch: ['Description', 'Name', 'ObjectID']
+		    fetch: ['Description', 'Name', 'ObjectID'],
+            limit: Infinity
 		});
     },
 
+
     _loadInitData: function () {
-    	console.log('loading init stories');
+    	console.log('loading init features');
     	//console.log('filters:', this.filtersInit);
     	var store = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch : ['Name', 
@@ -324,12 +331,10 @@ Ext.define('CustomApp', {
                 "_ValidTo"],
             filters : this.filtersInit,
             autoLoad: true,
-	        sorters : [
-		        {
-		            property: 'ObjectID',
-		            direction: 'ASC'
-	        	}
-	        ],
+            sorters: [{
+                property: 'ObjectID',
+                direction: 'ASC'
+            }],
             limit: Infinity,
             hydrate: ['State'],
 
@@ -344,8 +349,9 @@ Ext.define('CustomApp', {
         });
     },
 
+
     _loadEndData: function() {
-        console.log('loading end stories');
+        console.log('loading end features');
         var store2 = Ext.create('Rally.data.lookback.SnapshotStore', {
             fetch : ['Name',
                 'FormattedID',
@@ -374,7 +380,6 @@ Ext.define('CustomApp', {
                 load: function(store, data, success) {
                     this.endItems = data;
                     this._onStoriesLoaded();
-                    this.myMask.hide();
                 },
                 scope: this
             }
@@ -420,9 +425,15 @@ Ext.define('CustomApp', {
         });
         console.log('endIds', endIds);
 
+
+
+        var initPromise = this._loadInitStories(initIds);
+        var endPromise = this._loadEndStories(endIds);
+
         var promise = this._loadParentNames(parentIds);
-        Deft.Promise.all([promise]).then({
+        Deft.Promise.all([promise, initPromise, endPromise]).then({
             success: function(records) {
+                console.log('promises:', records);
                 var parentNames = records[0];
 
                 //find features not planned / items on endItems that were not included in initItems
@@ -498,15 +509,132 @@ Ext.define('CustomApp', {
                     pageSize: 1000
                 });
 
-                this._createSummaryGrid(initFeatures, endFeatures);
+
+                var initStories = records[1];
+                var endStories = records[2];
+                this._createSummaryGrid(initFeatures, endFeatures, initStories, endStories);
                 this._createInitGrid(initStore, '#childPanel1');
                 this._createEndGrid(endStore, '#childPanel2');
+
+                this.myMask.hide();
             },
             failure: function(error) {
                 console.log('error:', error);
             },
             scope: this
         });
+    },
+
+
+    _loadInitStories: function(initFeatureIds) {
+        var deferred = Ext.create('Deft.Deferred');
+        console.log('loading init stories', this.initDate, this.projectId);
+
+        var initFilter = [{
+            property: '__At',
+            value: this.initDate
+        }, {
+            property : '_ProjectHierarchy',
+            value: this.projectId
+        },{
+            property: '_TypeHierarchy',
+            value: 'HierarchicalRequirement'
+        }, {
+            property : 'PortfolioItem',
+            operator: 'in',
+            value: initFeatureIds
+        }];
+
+
+        var initStoriesStore = Ext.create('Rally.data.lookback.SnapshotStore', {
+            fetch : ['Name',
+                'FormattedID',
+                'ObjectID',
+                'ScheduleState',
+                'PlanEstimate',
+                "_ValidFrom",
+                "_ValidTo"
+            ],
+            hydrate: ['ScheduleState'],
+            filters: initFilter,
+            autoLoad: true,
+            limit: Infinity,
+            sorters: [{
+                property: 'ObjectID',
+                direction: 'ASC'
+            }],
+
+            listeners: {
+                load: function(store, data, success) {
+                    console.log('stories data lodade:', data);
+                    var initStoryIds = [];
+                    _.each(data, function(story) {
+                        initStoryIds.push(story.get('ObjectID'));
+                    });
+
+                    deferred.resolve(data);
+                },
+                scope: this
+            }
+        });
+
+        return deferred.promise;
+    },
+
+
+    _loadEndStories: function(endFeatureIds) {
+        var deferred = Ext.create('Deft.Deferred');
+        console.log('loading end stories', this.endDate, this.projectId);
+
+        var initFilter = [{
+            property: '__At',
+            value: this.endDate
+        }, {
+            property : '_ProjectHierarchy',
+            value: this.projectId
+        },{
+            property: '_TypeHierarchy',
+            value: 'HierarchicalRequirement'
+        }, {
+            property : 'PortfolioItem',
+            operator: 'in',
+            value: endFeatureIds
+        }];
+
+
+        var endStoriesStore = Ext.create('Rally.data.lookback.SnapshotStore', {
+            fetch : ['Name',
+                'FormattedID',
+                'ObjectID',
+                'ScheduleState',
+                'PlanEstimate',
+                "_ValidFrom",
+                "_ValidTo"
+            ],
+            hydrate: ['ScheduleState'],
+            filters: initFilter,
+            autoLoad: true,
+            limit: Infinity,
+            sorters: [{
+                property: 'ObjectID',
+                direction: 'ASC'
+            }],
+
+            listeners: {
+                load: function(store, data, success) {
+                    console.log('end stories data lodade:', data);
+                    var endStoryIds = [];
+                    _.each(data, function(story) {
+                        endStoryIds.push(story.get('ObjectID'));
+                    });
+
+                    deferred.resolve(data);
+                },
+                scope: this
+            }
+        });
+
+        return deferred.promise;
     },
 
 
@@ -719,7 +847,7 @@ Ext.define('CustomApp', {
     },
 
 
-    _createSummaryGrid: function(initItems, endItems) {
+    _createSummaryGrid: function(initItems, endItems, initStories, endStories) {
         var totalFeatureCount = 0;
         var totalPreliminaryEstimate = 0;
         var totalCountRemoved = 0;
@@ -759,6 +887,9 @@ Ext.define('CustomApp', {
 
                 var preliminaryEstimates = records[0];
 
+                totalStoryCountRemoved = this._calculateTotalStoryCountRemoved(initStories, endStories);
+                totalStoryEstimateRemoved = this._calculateTotalStoryEstimateRemoved(initStories, endStories);
+
                 _.each(initItems, function(record) {
                     totalFeatureCount += 1;
                     totalStoryCount += record['LeafStoryCount'];
@@ -770,14 +901,15 @@ Ext.define('CustomApp', {
 
                     if (record['Removed']) {
                         totalCountRemoved += 1;
-                        totalStoryCountRemoved += record['LeafStoryCount'];
-                        totalStoryEstimateRemoved += record['LeafStoryPlanEstimateTotal'];
 
                         if (record['PreliminaryEstimate'] != '') {                            
                             totalPreliminaryEstimateRemoved += preliminaryEstimates.get(record['PreliminaryEstimate']);
                         }
                     }
                 });
+
+                totalStoryCountAdded = this._calculateTotalStoryCountAdded(initStories, endStories);
+                totalStoryEstimateAdded = this._calculateTotalStoryEstimateAdded(initStories, endStories);
 
                 _.each(endItems, function(record) {
                     totalFeatureCountEnd += 1;
@@ -793,8 +925,6 @@ Ext.define('CustomApp', {
 
                     if (!record['Planned']) {
                         totalCountAdded += 1;
-                        totalStoryCountAdded += record['LeafStoryCount'];
-                        totalStoryEstimateAdded += record['LeafStoryPlanEstimateTotal'];
 
                         if (record['PreliminaryEstimate'] != '') {
                             totalPreliminaryEstimateAdded += preliminaryEstimates.get(record['PreliminaryEstimate']);
@@ -897,6 +1027,110 @@ Ext.define('CustomApp', {
             },
             scope: this
         });        
+    },
+
+
+    _calculateTotalStoryCountRemoved: function(initStories, endStories) {
+        var initIds = [];
+        var endIds = [];
+
+        var totalStoryCountRemoved = 0;
+        
+        _.each(initStories, function(story) {
+            initIds.push(story.get('ObjectID'));
+        });
+
+        _.each(endStories, function(story) {
+            endIds.push(story.get('ObjectID'));
+        });
+
+        _.each(initStories, function(story) {
+            if (!Ext.Array.contains(endIds, story.get('ObjectID'))) {
+                totalStoryCountRemoved += 1;
+            }
+        });
+
+        return totalStoryCountRemoved;
+    },
+
+
+    _calculateTotalStoryEstimateRemoved: function(initStories, endStories) {
+        var initIds = [];
+        var endIds = [];
+
+        var totalEstimateRemoved = 0;
+
+        var totalEstimate = 0;
+        var totalEstimateEnd =0;
+        
+        _.each(initStories, function(story) {
+            initIds.push(story.get('ObjectID'));
+            totalEstimate +=story.get('PlanEstimate');
+        });
+
+        _.each(endStories, function(story) {
+            endIds.push(story.get('ObjectID'));
+            totalEstimateEnd +=story.get('PlanEstimate');
+        });
+
+        _.each(initStories, function(story) {
+            if (!Ext.Array.contains(endIds, story.get('ObjectID'))) {
+                totalEstimateRemoved += story.get('PlanEstimate');
+            }
+        });
+
+        console.log('total story estimate', totalEstimate);
+        console.log('total story estimate end ', totalEstimateEnd);
+
+        return totalEstimateRemoved;
+    },
+
+
+    _calculateTotalStoryCountAdded: function(initStories, endStories) {
+        var initIds = [];
+        var endIds = [];
+
+        var totalStoryCountAdded = 0;
+        
+        _.each(initStories, function(story) {
+            initIds.push(story.get('ObjectID'));
+        });
+
+        _.each(endStories, function(story) {
+            endIds.push(story.get('ObjectID'));
+        });
+
+        _.each(endStories, function(story) {
+            if (!Ext.Array.contains(initIds, story.get('ObjectID'))) {
+                totalStoryCountAdded += 1;
+            }
+        });
+
+        return totalStoryCountAdded;
+    },
+
+
+    _calculateTotalStoryEstimateAdded: function(initStories, endStories) {
+        var initIds = [];
+        var endIds = [];
+
+        var totalEstimateAdded = 0;
+        
+        _.each(initStories, function(story) {
+            initIds.push(story.get('ObjectID'));
+        });
+
+        _.each(endStories, function(story) {
+            endIds.push(story.get('ObjectID'));
+        });
+
+        _.each(endStories, function(story) {
+            if (!Ext.Array.contains(initIds, story.get('ObjectID'))) {
+                totalEstimateAdded += story.get('PlanEstimate');
+            }
+        });
+
+        return totalEstimateAdded;
     },
 
 
