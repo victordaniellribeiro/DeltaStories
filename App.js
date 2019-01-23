@@ -215,29 +215,41 @@ Ext.define('CustomApp', {
 
 
 			filters: Rally.data.QueryFilter.or([
+                Rally.data.QueryFilter.and([
+                    {
+                        property: 'Project.ObjectID',
+                        value: projectId
+                    },
+                    {
+                        property: 'name',
+                        value: baseReleaseName
+                    }   
+                ]),
+                    Rally.data.QueryFilter.or([
 
-				Rally.data.QueryFilter.and([
-					{
-						property: 'Project.parent.ObjectID',
-						value: projectId
-					},
-					{
-						property: 'name',
-						value: baseReleaseName
-					}	
-				]),
-				
-				Rally.data.QueryFilter.and([
-					{
-						property: 'Project.parent.parent.ObjectID',
-						value: projectId
-					},
-					{
-						property: 'name',
-						value: baseReleaseName
-					}	
-				])
-			]),
+                        Rally.data.QueryFilter.and([
+                            {
+                                property: 'Project.parent.ObjectID',
+                                value: projectId
+                            },
+                            {
+                                property: 'name',
+                                value: baseReleaseName
+                            }   
+                        ]),
+                        
+                        Rally.data.QueryFilter.and([
+                            {
+                                property: 'Project.parent.parent.ObjectID',
+                                value: projectId
+                            },
+                            {
+                                property: 'name',
+                                value: baseReleaseName
+                            }   
+                        ])
+                    ])
+                ]),
 
 		    listeners: {
 		        load: function(store, data, success) {
@@ -501,12 +513,12 @@ Ext.define('CustomApp', {
                 
                 var initStore = Ext.create('Rally.data.custom.Store', {
                     data: initFeatures,
-                    pageSize: 1000
+                    pageSize: 10000
                 });
 
                 var endStore = Ext.create('Rally.data.custom.Store', {
                     data: endFeatures,
-                    pageSize: 1000
+                    pageSize: 10000
                 });
 
 
@@ -566,7 +578,7 @@ Ext.define('CustomApp', {
 
             listeners: {
                 load: function(store, data, success) {
-                    console.log('stories data lodade:', data);
+                    console.log('stories data loaded:', data);
                     var initStoryIds = [];
                     _.each(data, function(story) {
                         initStoryIds.push(story.get('ObjectID'));
@@ -622,7 +634,7 @@ Ext.define('CustomApp', {
 
             listeners: {
                 load: function(store, data, success) {
-                    console.log('end stories data lodade:', data);
+                    console.log('end stories data loaded:', data);
                     var endStoryIds = [];
                     _.each(data, function(story) {
                         endStoryIds.push(story.get('ObjectID'));
